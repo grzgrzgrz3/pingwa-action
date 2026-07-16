@@ -41,6 +41,11 @@ runs:
       run: |
         set -euo pipefail
         RESP="${RUNNER_TEMP:-/tmp}/pingwa-resp.json"
+        case "$MODE" in
+          notify|ask) ;;
+          *) echo "::error::mode must be notify or ask, got '$MODE'"; exit 1;;
+        esac
+        [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { echo "::error::timeout must be a number, got '$TIMEOUT'"; exit 1; }
         if [ "$MODE" = "ask" ]; then
           BTNS=$(printf '%s' "$BUTTONS" | jq -R 'split(",") | map(gsub("^ +| +$"; ""))')
           BODY=$(jq -n --arg t "$MESSAGE" --argjson b "$BTNS" --argjson to "$TIMEOUT" \
@@ -58,11 +63,16 @@ runs:
             exit 1
           fi
           BID=$(jq -r '.reply.button_id // empty' "$RESP")
-          echo "button-id=$BID" >> "$GITHUB_OUTPUT"
           [ -n "$BID" ] || { echo "::error::reply carried no button_id"; exit 1; }
+          echo "button-id=$BID" >> "$GITHUB_OUTPUT"
         else
-          jq -n --arg t "$MESSAGE" '{text: $t}' | \
-          curl -sS --fail -X POST "$BASE_URL/v1/notify" \
-               -H "Authorization: Bearer $PINGWA_KEY" \
-               -H "Content-Type: application/json" -d @-
+          BODY=$(jq -n --arg t "$MESSAGE" '{text: $t}')
+          HTTP=$(curl -sS -o "$RESP" -w '%{http_code}' \
+                 -X POST "$BASE_URL/v1/notify" \
+                 -H "Authorization: Bearer $PINGWA_KEY" \
+                 -H "Content-Type: application/json" -d "$BODY")
+          case "$HTTP" in
+            2??) ;;
+            *) echo "::error::pingwa /v1/notify returned HTTP $HTTP: $(cat "$RESP")"; exit 1;;
+          esac
         fi

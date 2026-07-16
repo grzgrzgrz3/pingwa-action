@@ -15,13 +15,15 @@ jobs:
 
   smoke:
     # No secrets needed: extract the composite step's script from action.yml,
-    # check it parses, and prove the error path exits nonzero against a dead
-    # BASE_URL. Forks stay green.
+    # check it parses, prove the error path exits nonzero against a dead
+    # BASE_URL, and prove the ask happy path writes button-id=b0 against a
+    # local stub. Forks stay green.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Extract run script
         run: |
+          python3 -c "import yaml" 2>/dev/null || python3 -m pip install --quiet pyyaml
           python3 -c "import yaml; print(yaml.safe_load(open('action.yml'))['runs']['steps'][0]['run'])" > "$RUNNER_TEMP/pingwa-step.sh"
       - name: Script parses
         run: bash -n "$RUNNER_TEMP/pingwa-step.sh"
@@ -39,3 +41,31 @@ jobs:
             exit 1
           fi
           echo "script failed as expected"
+      - name: Ask happy path writes button-id=b0 (local stub)
+        env:
+          PINGWA_KEY: dummy
+          MESSAGE: deploy?
+          MODE: ask
+          BUTTONS: "ship it,abort"
+          TIMEOUT: "90"
+          BASE_URL: http://127.0.0.1:18931
+        run: |
+          python3 - <<'EOF' &
+          import json
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                  body = json.dumps({"reply": {"button_id": "b0"}}).encode()
+                  self.send_response(200)
+                  self.send_header("Content-Type", "application/json")
+                  self.end_headers()
+                  self.wfile.write(body)
+              def log_message(self, *args):
+                  pass
+          HTTPServer(("127.0.0.1", 18931), H).handle_request()
+          EOF
+          sleep 1
+          GITHUB_OUTPUT="$RUNNER_TEMP/gh-output" bash "$RUNNER_TEMP/pingwa-step.sh"
+          grep -qx 'button-id=b0' "$RUNNER_TEMP/gh-output"
+          echo "button-id=b0 landed in GITHUB_OUTPUT"

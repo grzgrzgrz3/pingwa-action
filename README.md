@@ -1,5 +1,7 @@
 # pingwa-action — WhatsApp notify & approve for GitHub Actions
 
+[![ci](https://github.com/grzgrzgrz3/pingwa-action/actions/workflows/ci.yml/badge.svg)](https://github.com/grzgrzgrz3/pingwa-action/actions/workflows/ci.yml)
+
 Send a WhatsApp notification from any workflow, or **pause the workflow until
 you tap a button on your phone**. Runs on [pingwa](https://pingwa.dev) — the
 official Meta Cloud API, no linked device, no Twilio, no WABA of your own.
@@ -112,7 +114,8 @@ uses: grzgrzgrz3/pingwa-action@<commit-sha>
 
 A composite action: one bash step, `curl` + `jq` only (both preinstalled on
 GitHub-hosted runners), ~40 lines, zero third-party dependencies. Read
-[`action.yml`](action.yml) — that's the whole thing.
+[`action.yml`](action.yml) — that's the whole thing. It needs no
+`permissions:` block — it never touches `GITHUB_TOKEN`.
 
 ## Links
 
