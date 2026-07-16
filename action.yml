@@ -1,0 +1,68 @@
+name: "pingwa — WhatsApp notify & approve"
+description: "Send a WhatsApp notification or pause for a tap-to-approve reply from any workflow. Official Meta Cloud API — no linked device, no Twilio."
+branding:
+  icon: "message-circle"
+  color: "green"
+inputs:
+  api-key:
+    description: "pingwa API key (store as a repository secret)"
+    required: true
+  message:
+    description: "Text to send (notify) or question to ask (ask)"
+    required: true
+  mode:
+    description: "notify | ask"
+    default: "notify"
+  buttons:
+    description: "Comma-separated button labels for ask mode (max 3)"
+    default: "yes,no"
+  timeout:
+    description: "Seconds to wait for the reply in ask mode (max 90)"
+    default: "90"
+  base-url:
+    description: "API base URL"
+    default: "https://pingwa.dev"
+outputs:
+  button-id:
+    description: "Positional id of the tapped button in ask mode (b0 = first)"
+    value: ${{ steps.call.outputs.button-id }}
+runs:
+  using: "composite"
+  steps:
+    - id: call
+      shell: bash
+      env:
+        PINGWA_KEY: ${{ inputs.api-key }}
+        MESSAGE: ${{ inputs.message }}
+        MODE: ${{ inputs.mode }}
+        BUTTONS: ${{ inputs.buttons }}
+        TIMEOUT: ${{ inputs.timeout }}
+        BASE_URL: ${{ inputs.base-url }}
+      run: |
+        set -euo pipefail
+        RESP="${RUNNER_TEMP:-/tmp}/pingwa-resp.json"
+        if [ "$MODE" = "ask" ]; then
+          BTNS=$(printf '%s' "$BUTTONS" | jq -R 'split(",") | map(gsub("^ +| +$"; ""))')
+          BODY=$(jq -n --arg t "$MESSAGE" --argjson b "$BTNS" --argjson to "$TIMEOUT" \
+                 '{text: $t, buttons: $b, timeout: $to}')
+          HTTP=$(curl -sS -o "$RESP" -w '%{http_code}' --max-time 95 \
+                 -X POST "$BASE_URL/v1/ask" \
+                 -H "Authorization: Bearer $PINGWA_KEY" \
+                 -H "Content-Type: application/json" -d "$BODY")
+          if [ "$HTTP" = "408" ]; then
+            echo "::error::no reply within ${TIMEOUT}s — failing safe (no approval)"
+            exit 1
+          fi
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::pingwa /v1/ask returned HTTP $HTTP: $(cat "$RESP")"
+            exit 1
+          fi
+          BID=$(jq -r '.reply.button_id // empty' "$RESP")
+          echo "button-id=$BID" >> "$GITHUB_OUTPUT"
+          [ -n "$BID" ] || { echo "::error::reply carried no button_id"; exit 1; }
+        else
+          jq -n --arg t "$MESSAGE" '{text: $t}' | \
+          curl -sS --fail -X POST "$BASE_URL/v1/notify" \
+               -H "Authorization: Bearer $PINGWA_KEY" \
+               -H "Content-Type: application/json" -d @-
+        fi

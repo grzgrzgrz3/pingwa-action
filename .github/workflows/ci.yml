@@ -1,0 +1,41 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
+
+  smoke:
+    # No secrets needed: extract the composite step's script from action.yml,
+    # check it parses, and prove the error path exits nonzero against a dead
+    # BASE_URL. Forks stay green.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract run script
+        run: |
+          python3 -c "import yaml; print(yaml.safe_load(open('action.yml'))['runs']['steps'][0]['run'])" > "$RUNNER_TEMP/pingwa-step.sh"
+      - name: Script parses
+        run: bash -n "$RUNNER_TEMP/pingwa-step.sh"
+      - name: Error path exits nonzero (notify against dead host)
+        env:
+          PINGWA_KEY: dummy
+          MESSAGE: smoke test
+          MODE: notify
+          BUTTONS: "yes,no"
+          TIMEOUT: "5"
+          BASE_URL: http://127.0.0.1:9
+        run: |
+          if bash "$RUNNER_TEMP/pingwa-step.sh"; then
+            echo "::error::script succeeded against a dead host — error path is broken"
+            exit 1
+          fi
+          echo "script failed as expected"
