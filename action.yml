@@ -1,5 +1,5 @@
 name: "pingwa — WhatsApp notify & approve"
-description: "Send a WhatsApp notification or pause for a tap-to-approve reply from any workflow. Official Meta Cloud API — no linked device, no Twilio."
+description: "WhatsApp notify or tap-to-approve gate for any workflow. Official Meta Cloud API — no linked device, no Twilio."
 branding:
   icon: "message-circle"
   color: "green"
